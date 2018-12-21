@@ -99,12 +99,15 @@ private[xml] object StaxXmlParser extends Serializable {
       parser: XMLEventReader,
       dataType: DataType,
       options: XmlOptions): Any = {
+
+    // define function to convert complicated type
     def convertComplicatedType: DataType => Any = {
       case dt: StructType => convertObject(parser, dt, options)
       case MapType(StringType, vt, _) => convertMap(parser, vt, options)
       case ArrayType(st, _) => convertField(parser, st, options)
       case _: StringType => StaxXmlParserUtils.currentStructureAsString(parser)
     }
+
 
     (parser.peek, dataType) match {
       case (_: StartElement, dt: DataType) => convertComplicatedType(dt)
@@ -246,12 +249,19 @@ private[xml] object StaxXmlParser extends Serializable {
           val attributes = e.getAttributes.asScala.map(_.asInstanceOf[Attribute]).toArray
           val field = e.asStartElement.getName.getLocalPart
 
+          logger.info("found start element")
+          logger.info(field)
+
           nameToIndex.get(field) match {
+            // value found
             case Some(index) =>
+
               schema(index).dataType match {
+                // case is a struture 
                 case st: StructType =>
                   row(index) = convertObjectWithAttributes(parser, st, options, attributes)
 
+                // case is array
                 case ArrayType(dt: DataType, _) =>
                   val values = Option(row(index))
                     .map(_.asInstanceOf[ArrayBuffer[Any]])
@@ -270,6 +280,31 @@ private[xml] object StaxXmlParser extends Serializable {
                   row(index) = convertField(parser, dt, options)
               }
 
+            // value not found
+            case None =>
+              StaxXmlParserUtils.skipChildren(parser)
+          }
+
+        case c: Characters => 
+          logger.info("found chars")
+          logger.info(c.getData)
+          nameToIndex.get(options.valueTag) match {
+            // value found
+            case Some(index) =>
+              // get the current value
+              var currentValue = row(index)
+              var newData = c.getData
+              // contact the new value (of c)
+
+              currentValue match {
+                case Some(value) =>
+                  row(index) = value + newData
+                case None => 
+                  row(index) = newData
+              }
+
+
+            // value not found
             case None =>
               StaxXmlParserUtils.skipChildren(parser)
           }

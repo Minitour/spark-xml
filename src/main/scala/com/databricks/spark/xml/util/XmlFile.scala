@@ -22,7 +22,6 @@ import javax.xml.stream.XMLOutputFactory
 import scala.collection.Map
 
 import com.databricks.spark.xml.parsers.StaxXmlGenerator
-import com.sun.xml.internal.txw2.output.IndentingXMLStreamWriter
 import org.apache.hadoop.io.{Text, LongWritable}
 
 import org.apache.spark.rdd.RDD
@@ -77,54 +76,5 @@ private[xml] object XmlFile {
     val rowSchema = dataFrame.schema
     val indent = XmlFile.DEFAULT_INDENT
 
-    val xmlRDD = dataFrame.rdd.mapPartitions { iter =>
-      val factory = XMLOutputFactory.newInstance()
-      val writer = new CharArrayWriter()
-      val xmlWriter = factory.createXMLStreamWriter(writer)
-      val indentingXmlWriter = new IndentingXMLStreamWriter(xmlWriter)
-      indentingXmlWriter.setIndentStep(indent)
-
-      new Iterator[String] {
-        var firstRow: Boolean = true
-        var lastRow: Boolean = true
-
-        override def hasNext: Boolean = iter.hasNext || firstRow || lastRow
-
-        override def next: String = {
-          if (iter.nonEmpty) {
-            if (firstRow) {
-              indentingXmlWriter.writeStartElement(options.rootTag)
-              firstRow = false
-            }
-            val xml = {
-              StaxXmlGenerator(
-                rowSchema,
-                indentingXmlWriter,
-                options)(iter.next())
-              writer.toString
-            }
-            writer.reset()
-            xml
-          } else {
-            if (!firstRow) {
-              lastRow = false
-              indentingXmlWriter.writeEndElement()
-              indentingXmlWriter.close()
-              writer.toString
-            } else {
-              // This means the iterator was initially empty.
-              firstRow = false
-              lastRow = false
-              ""
-            }
-          }
-        }
-      }
-    }
-
-    codecClass match {
-      case null => xmlRDD.saveAsTextFile(path)
-      case codec => xmlRDD.saveAsTextFile(path, codec)
-    }
   }
 }

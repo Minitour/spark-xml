@@ -35,7 +35,7 @@ class DefaultSource
   /**
    * Short alias for spark-xml data source.
    */
-  override def shortName(): String = "xml"
+  override def shortName(): String = "pxml"
 
   private def checkPath(parameters: Map[String, String]): String = {
     parameters.getOrElse("path", sys.error("'path' must be specified for XML data."))

@@ -15,8 +15,7 @@
  */
 package com.databricks.spark.xml.parsers
 
-import java.io.StringReader
-
+import java.io.{StringReader, StringWriter}
 import javax.xml.stream.events.{Attribute, XMLEvent}
 import javax.xml.stream.events._
 import javax.xml.stream._
@@ -24,9 +23,7 @@ import javax.xml.stream._
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
-
 import org.slf4j.LoggerFactory
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
@@ -40,9 +37,9 @@ private[xml] object StaxXmlParser extends Serializable {
   private val logger = LoggerFactory.getLogger(StaxXmlParser.getClass)
 
   def parse(
-      xml: RDD[String],
-      schema: StructType,
-      options: XmlOptions): RDD[Row] = {
+             xml: RDD[String],
+             schema: StructType,
+             options: XmlOptions): RDD[Row] = {
     def failedRecord(record: String): Option[Row] = {
       // create a row even if no corrupt record column is present
       if (options.failFast) {
@@ -68,7 +65,7 @@ private[xml] object StaxXmlParser extends Serializable {
       factory.setProperty(XMLInputFactory.IS_COALESCING, true)
       val filter = new EventFilter {
         override def accept(event: XMLEvent): Boolean =
-          // Ignore comments. This library does not treat comments.
+        // Ignore comments. This library does not treat comments.
           event.getEventType != XMLStreamConstants.COMMENT
       }
 
@@ -93,12 +90,12 @@ private[xml] object StaxXmlParser extends Serializable {
   }
 
   /**
-   * Parse the current token (and related children) according to a desired schema
-   */
+    * Parse the current token (and related children) according to a desired schema
+    */
   private[xml] def convertField(
-      parser: XMLEventReader,
-      dataType: DataType,
-      options: XmlOptions): Any = {
+                                 parser: XMLEventReader,
+                                 dataType: DataType,
+                                 options: XmlOptions): Any = {
 
     // define function to convert complicated type
     def convertComplicatedType: DataType => Any = {
@@ -141,12 +138,12 @@ private[xml] object StaxXmlParser extends Serializable {
   }
 
   /**
-   * Parse an object as map.
-   */
+    * Parse an object as map.
+    */
   private def convertMap(
-      parser: XMLEventReader,
-      valueType: DataType,
-      options: XmlOptions): Map[String, Any] = {
+                          parser: XMLEventReader,
+                          valueType: DataType,
+                          options: XmlOptions): Map[String, Any] = {
     val keys = ArrayBuffer.empty[String]
     val values = ArrayBuffer.empty[Any]
     var shouldStop = false
@@ -165,12 +162,12 @@ private[xml] object StaxXmlParser extends Serializable {
   }
 
   /**
-   * Convert XML attributes to a map with the given schema types.
-   */
+    * Convert XML attributes to a map with the given schema types.
+    */
   private def convertAttributes(
-      attributes: Array[Attribute],
-      schema: StructType,
-      options: XmlOptions): Map[String, Any] = {
+                                 attributes: Array[Attribute],
+                                 schema: StructType,
+                                 options: XmlOptions): Map[String, Any] = {
     val convertedValuesMap = collection.mutable.Map.empty[String, Any]
     val valuesMap = StaxXmlParserUtils.convertAttributesToValuesMap(attributes, options)
     valuesMap.foreach { case (f, v) =>
@@ -183,15 +180,15 @@ private[xml] object StaxXmlParser extends Serializable {
   }
 
   /**
-   * [[convertObject()]] calls this in order to convert the nested object to a row.
-   * [[convertObject()]] contains some logic to find out which events are the start
-   * and end of a nested row and this function converts the events to a row.
-   */
+    * [[convertObject()]] calls this in order to convert the nested object to a row.
+    * [[convertObject()]] contains some logic to find out which events are the start
+    * and end of a nested row and this function converts the events to a row.
+    */
   private def convertObjectWithAttributes(
-      parser: XMLEventReader,
-      schema: StructType,
-      options: XmlOptions,
-      attributes: Array[Attribute] = Array.empty): Row = {
+                                           parser: XMLEventReader,
+                                           schema: StructType,
+                                           options: XmlOptions,
+                                           attributes: Array[Attribute] = Array.empty): Row = {
     // TODO: This method might have to be removed. Some logics duplicate `convertObject()`
     val row = new Array[Any](schema.length)
 
@@ -215,7 +212,9 @@ private[xml] object StaxXmlParser extends Serializable {
     val valuesMap = fieldsMap ++ attributesMap
     valuesMap.foreach { case (f, v) =>
       val nameToIndex = schema.map(_.name).zipWithIndex.toMap
-      nameToIndex.get(f).foreach { row(_) = v }
+      nameToIndex.get(f).foreach {
+        row(_) = v
+      }
     }
 
     // Return null rather than empty row. For nested structs empty row causes
@@ -235,87 +234,54 @@ private[xml] object StaxXmlParser extends Serializable {
       parser: XMLEventReader,
       schema: StructType,
       options: XmlOptions,
-      rootAttributes: Array[Attribute] = Array.empty): Row = {
+      rootAttributes: Array[Attribute] = Array.empty)
+
+    = {
+
+    // create row object from fields
     val row = new Array[Any](schema.length)
+
+    // create name to index mapping
     val nameToIndex = schema.map(_.name).zipWithIndex.toMap
+
     // If there are attributes, then we process them first.
     convertAttributes(rootAttributes, schema, options).toSeq.foreach { case (f, v) =>
       nameToIndex.get(f).foreach { row(_) = v }
     }
+
     var shouldStop = false
+    var datam = ""
+    val enclosingTag = "</" + options.rowTag + ">"
     while (!shouldStop) {
+      val peek = parser.peek()
+      val writter = new StringWriter()
+      peek.writeAsEncodedUnicode(writter)
+
+      val rowValue = writter.toString
+      logger.info(rowValue)
+
+      datam = datam.concat(rowValue)
+
       parser.nextEvent match {
         case e: StartElement =>
-          val attributes = e.getAttributes.asScala.map(_.asInstanceOf[Attribute]).toArray
-          val field = e.asStartElement.getName.getLocalPart
 
-          logger.info("found start element")
-          logger.info(field)
-
-          nameToIndex.get(field) match {
-            // value found
-            case Some(index) =>
-
-              schema(index).dataType match {
-                // case is a struture 
-                case st: StructType =>
-                  row(index) = convertObjectWithAttributes(parser, st, options, attributes)
-
-                // case is array
-                case ArrayType(dt: DataType, _) =>
-                  val values = Option(row(index))
-                    .map(_.asInstanceOf[ArrayBuffer[Any]])
-                    .getOrElse(ArrayBuffer.empty[Any])
-                  val newValue = {
-                    dt match {
-                      case st: StructType =>
-                        convertObjectWithAttributes(parser, st, options, attributes)
-                      case dt: DataType =>
-                        convertField(parser, dt, options)
-                    }
-                  }
-                  row(index) = values :+ newValue
-
-                case dt: DataType =>
-                  row(index) = convertField(parser, dt, options)
-              }
-
-            // value not found
-            case None =>
-              StaxXmlParserUtils.skipChildren(parser)
-          }
-
-        case c: Characters => 
-          logger.info("found chars")
-          logger.info(c.getData)
-          nameToIndex.get(options.valueTag) match {
-            // value found
-            case Some(index) =>
-              // get the current value
-              var currentValue = row(index)
-              var newData = c.getData
-              // contact the new value (of c)
-
-              currentValue match {
-                case Some(value) =>
-                  row(index) = value + newData
-                case None => 
-                  row(index) = newData
-              }
-
-
-            // value not found
-            case None =>
-              StaxXmlParserUtils.skipChildren(parser)
-          }
-
-        case _: EndElement =>
-          shouldStop = StaxXmlParserUtils.checkEndElement(parser)
+        case c: Characters =>
 
         case _ =>
-          shouldStop = shouldStop && parser.hasNext
+          shouldStop = !parser.hasNext
       }
+
     }
+    val index = Option(nameToIndex("RAW")).getOrElse(-1)
+
+    datam = datam.replaceAll(enclosingTag, "")
+
+    logger.info(datam)
+
+    if (index != -1) {
+      row(index) = castTo(datam, StringType, options)
+    }
+
     Row.fromSeq(row)
   }
 }

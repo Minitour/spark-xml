@@ -43,7 +43,7 @@ case class XmlRelation protected[spark] (
       InferSchema.infer(
         baseRDD(),
         options)
-    }
+    }.add("RAW", StringType)
   }
 
   override def buildScan(): RDD[Row] = {

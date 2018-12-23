@@ -1,4 +1,4 @@
-name := "spark-xml"
+name := "tony-xml"
 
 version := "0.5.0"
 

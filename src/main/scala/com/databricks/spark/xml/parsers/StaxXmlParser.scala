@@ -258,7 +258,6 @@ private[xml] object StaxXmlParser extends Serializable {
       peek.writeAsEncodedUnicode(writter)
 
       val rowValue = writter.toString
-      logger.info(rowValue)
 
       datam = datam.concat(rowValue)
 
@@ -275,8 +274,6 @@ private[xml] object StaxXmlParser extends Serializable {
     val index = Option(nameToIndex("RAW")).getOrElse(-1)
 
     datam = datam.replaceAll(enclosingTag, "")
-
-    logger.info(datam)
 
     if (index != -1) {
       row(index) = castTo(datam, StringType, options)
